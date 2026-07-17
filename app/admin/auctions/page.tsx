@@ -32,11 +32,19 @@ export default async function AdminAuctionsPage() {
     (aw: { id: string }) => !usedIds.has(aw.id)
   )
 
-  // 전체 경매 목록
+  // 전체 경매 목록 + 인증서 조회
   const { data: auctions } = await service
     .from('auctions')
-    .select('*, artworks(title, artists(display_name))')
+    .select('*, artworks(title, sale_type, edition_total, editions_sold, artists(display_name))')
     .order('created_at', { ascending: false })
+
+  const auctionIds = (auctions ?? []).map((a: { id: string }) => a.id)
+  const { data: certs } = auctionIds.length
+    ? await service.from('certificates').select('id, auction_id').in('auction_id', auctionIds)
+    : { data: [] }
+  const certByAuction = Object.fromEntries(
+    (certs ?? []).map((c: { id: string; auction_id: string }) => [c.auction_id, c.id])
+  )
 
   const statusLabel: Record<string, string> = {
     scheduled: '예정',
@@ -97,12 +105,16 @@ export default async function AdminAuctionsPage() {
           )}
           <div className="space-y-4">
             {auctions?.map((auction) => {
-              const artwork = auction.artworks as { title: string; artists: { display_name: string } | null } | null
+              const artwork = auction.artworks as {
+                title: string; sale_type: string; edition_total: number; editions_sold: number;
+                artists: { display_name: string } | null
+              } | null
+              const certId = certByAuction[auction.id] ?? null
               return (
                 <div key={auction.id} className="bg-white rounded-2xl shadow p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColor[auction.status]}`}>
                           {statusLabel[auction.status]}
                         </span>
@@ -110,6 +122,11 @@ export default async function AdminAuctionsPage() {
                         <span className="text-sm text-gray-500">
                           — {(artwork?.artists as { display_name: string } | null)?.display_name ?? '-'}
                         </span>
+                        {artwork?.sale_type === 'numbered' && (
+                          <span className="text-xs text-gray-400">
+                            [{artwork.editions_sold}/{artwork.edition_total} 판매]
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-600 grid grid-cols-3 gap-x-6">
                         <span>시작가: ₩{Number(auction.start_price).toLocaleString()}</span>
@@ -131,7 +148,11 @@ export default async function AdminAuctionsPage() {
                       >
                         보기
                       </Link>
-                      <AuctionStatusButton auctionId={auction.id} currentStatus={auction.status} />
+                      <AuctionStatusButton
+                        auctionId={auction.id}
+                        currentStatus={auction.status}
+                        certificateId={certId}
+                      />
                     </div>
                   </div>
                 </div>
