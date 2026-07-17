@@ -9,7 +9,7 @@ export default async function Navbar() {
   return (
     <nav className="border-b bg-white px-6 py-4 flex items-center justify-between">
       <Link href="/" className="text-xl font-bold tracking-tight">
-        aiart.bid
+        aiart.so
       </Link>
       <div className="flex gap-4 text-sm items-center">
         {user ? (

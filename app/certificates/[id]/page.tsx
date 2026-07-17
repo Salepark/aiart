@@ -45,7 +45,7 @@ export default async function CertificatePage({ params }: { params: Promise<{ id
             <p className="text-xs tracking-[0.2em] uppercase text-gray-400 mb-1">
               Certificate of Authenticity
             </p>
-            <p className="text-2xl font-bold tracking-tight">aiart.bid</p>
+            <p className="text-2xl font-bold tracking-tight">aiart.so</p>
           </div>
 
           {/* 미리보기 이미지 */}
@@ -105,7 +105,7 @@ export default async function CertificatePage({ params }: { params: Promise<{ id
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          이 인증서는 aiart.bid 플랫폼에서 발급된 디지털 소유권 증명서입니다.
+          이 인증서는 aiart.so 플랫폼에서 발급된 디지털 소유권 증명서입니다.
         </p>
       </div>
     </div>

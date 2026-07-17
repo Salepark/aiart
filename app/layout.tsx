@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "aiart.bid — AI Art Auction",
+  title: "aiart.so — AI Art Auction",
   description: "AI 아트의 새로운 가치를 발견하는 경매 플랫폼",
 };
 

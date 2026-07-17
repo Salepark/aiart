@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 
-/** 출품 시: 대각선 반복 "PREVIEW · aiart.bid" 워터마크 */
+/** 출품 시: 대각선 반복 "PREVIEW · aiart.so" 워터마크 */
 export async function addPreviewWatermark(buffer: Buffer): Promise<Buffer> {
   const { width = 800, height = 600 } = await sharp(buffer).metadata()
   const fontSize = Math.max(14, Math.floor(Math.min(width, height) / 22))
@@ -9,7 +9,7 @@ export async function addPreviewWatermark(buffer: Buffer): Promise<Buffer> {
   const tiles: string[] = []
   for (let y = -height; y < height * 2; y += gap) {
     for (let x = -width; x < width * 2; x += gap) {
-      tiles.push(`<text x="${x}" y="${y}">PREVIEW · aiart.bid</text>`)
+      tiles.push(`<text x="${x}" y="${y}">PREVIEW · aiart.so</text>`)
     }
   }
 
@@ -32,7 +32,7 @@ export async function addBuyerWatermark(
   const { width = 800, height = 600 } = await sharp(buffer).metadata()
   const barH = Math.max(36, Math.floor(height * 0.048))
   const fontSize = Math.floor(barH * 0.52)
-  const text = `aiart.bid · Cert #${info.certificateId.slice(0, 8).toUpperCase()} · Ed.${info.editionNumber}/${info.editionTotal} · ${info.issuedAt.split('T')[0]}`
+  const text = `aiart.so · Cert #${info.certificateId.slice(0, 8).toUpperCase()} · Ed.${info.editionNumber}/${info.editionTotal} · ${info.issuedAt.split('T')[0]}`
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${barH}">
     <rect width="${width}" height="${barH}" fill="rgba(0,0,0,0.78)"/>
