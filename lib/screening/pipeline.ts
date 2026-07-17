@@ -1,5 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { runL2, runL3, runL4, type LayerResult } from './ai'
+import { getImageMeta, computeFileHash, computePHash, extractExif } from './image'
+import { addPreviewWatermark } from './watermark'
 
 type VerdictInsert = {
   artwork_id: string
@@ -33,6 +35,43 @@ export async function runScreeningPipeline(artworkId: string): Promise<void> {
     .single()
 
   if (fetchErr || !artwork) throw new Error('artwork not found')
+
+  // ── 전처리: 원본 다운로드 → 워터마크 미리보기 생성 + 이미지 분석 ──
+  try {
+    const { data: originalFile } = await service.storage
+      .from('originals')
+      .download(artwork.original_path)
+
+    if (originalFile) {
+      const buffer = Buffer.from(await originalFile.arrayBuffer())
+
+      const [previewBuffer, meta, file_hash, phash, exif] = await Promise.all([
+        addPreviewWatermark(buffer),
+        getImageMeta(buffer),
+        computeFileHash(buffer),
+        computePHash(buffer),
+        extractExif(buffer),
+      ])
+
+      // 워터마크 미리보기 업로드 (기존 preview_path 덮어쓰기)
+      await service.storage
+        .from('artworks')
+        .upload(artwork.preview_path, previewBuffer, {
+          contentType: 'image/jpeg', upsert: true,
+        })
+
+      await service.from('artworks').update({
+        actual_width:  meta.actual_width,
+        actual_height: meta.actual_height,
+        file_hash,
+        phash,
+        exif,
+      }).eq('id', artworkId)
+    }
+  } catch (e) {
+    console.error('[pipeline] preprocessing error:', e)
+    // 전처리 실패해도 심사는 계속 진행
+  }
 
   await service.from('artworks').update({ status: 'screening' }).eq('id', artworkId)
 

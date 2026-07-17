@@ -9,6 +9,7 @@ export default function SubmitPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState('')
   const [error, setError]     = useState<string | null>(null)
 
   const [form, setForm] = useState({
@@ -34,25 +35,91 @@ export default function SubmitPage() {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
+  async function computeFileHash(buffer: ArrayBuffer): Promise<string> {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+    return Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     const file = fileRef.current?.files?.[0]
     if (!file) { setError('이미지를 선택해 주세요.'); return }
+    if (file.size > 200 * 1024 * 1024) { setError('파일 크기는 200MB 이하여야 합니다.'); return }
 
     setLoading(true)
-    const fd = new FormData()
-    fd.append('image', file)
-    Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v) })
 
-    const res  = await fetch('/api/artworks', { method: 'POST', body: fd })
-    const json = await res.json()
-    if (!res.ok) {
-      setError(json.error ?? '오류가 발생했습니다.')
+    try {
+      // 1. 서명 업로드 URL 발급
+      setProgress('업로드 준비 중...')
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const prepRes  = await fetch('/api/artworks/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ext }),
+      })
+      const prepJson = await prepRes.json()
+      if (!prepRes.ok) { setError(prepJson.error ?? '준비 실패'); return }
+
+      const { originalSignedUrl, previewSignedUrl, originalPath, previewPath } = prepJson
+
+      // 2. 파일 버퍼 읽기 + SHA-256 계산 (병렬)
+      setProgress('파일 분석 중...')
+      const buffer = await file.arrayBuffer()
+      const file_hash = await computeFileHash(buffer)
+
+      // 3. 원본 → originals 버킷 직접 업로드
+      setProgress('원본 업로드 중... (파일 크기에 따라 시간이 걸릴 수 있습니다)')
+      const origUpload = await fetch(originalSignedUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      if (!origUpload.ok) { setError('원본 업로드 실패. 다시 시도해 주세요.'); return }
+
+      // 4. 미리보기 → artworks 버킷 직접 업로드 (워터마크는 서버 파이프라인이 나중에 적용)
+      setProgress('미리보기 업로드 중...')
+      const prevUpload = await fetch(previewSignedUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      if (!prevUpload.ok) { setError('미리보기 업로드 실패. 다시 시도해 주세요.'); return }
+
+      // 5. 메타데이터만 API로 전송 (파일 없음 → 빠름)
+      setProgress('출품 정보 등록 중...')
+      const res  = await fetch('/api/artworks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          originalPath,
+          previewPath,
+          file_hash,
+          title:           form.title,
+          declared_tool:   form.declared_tool,
+          declared_prompt: form.declared_prompt,
+          intent:          form.intent,
+          declared_width:  form.declared_width,
+          declared_height: form.declared_height,
+          sale_type:       form.sale_type,
+          edition_total:   form.edition_total,
+          license_scope:   form.license_scope || null,
+          asking_price:    form.asking_price || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error ?? '등록 실패'); return }
+
+      setProgress('완료!')
+      router.push('/')
+    } catch (err) {
+      setError('오류가 발생했습니다: ' + (err as Error).message)
+    } finally {
       setLoading(false)
-      return
+      setProgress('')
     }
-    router.push('/')
   }
 
   const isNumbered = form.sale_type === 'numbered'
@@ -66,7 +133,7 @@ export default function SubmitPage() {
           {/* 이미지 업로드 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">이미지 *</label>
-            <p className="text-xs text-gray-400 mb-2">원본은 비공개 보관되고, 워터마크 미리보기가 자동 생성됩니다.</p>
+            <p className="text-xs text-gray-400 mb-2">원본은 비공개 보관되고, 워터마크 미리보기가 자동 생성됩니다. (최대 200MB)</p>
             <input
               type="file" accept="image/*" ref={fileRef} onChange={handleFile}
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800"
@@ -94,24 +161,16 @@ export default function SubmitPage() {
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="sale_type" value="exclusive" checked={form.sale_type === 'exclusive'} onChange={handleChange} />
-                <span className="text-sm">
-                  <span className="font-medium">Exclusive</span>
-                  <span className="text-gray-500 ml-1">— 단독 1점 판매</span>
-                </span>
+                <span className="text-sm"><span className="font-medium">Exclusive</span><span className="text-gray-500 ml-1">— 단독 1점 판매</span></span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="sale_type" value="numbered" checked={form.sale_type === 'numbered'} onChange={handleChange} />
-                <span className="text-sm">
-                  <span className="font-medium">Numbered</span>
-                  <span className="text-gray-500 ml-1">— 에디션 복수 판매</span>
-                </span>
+                <span className="text-sm"><span className="font-medium">Numbered</span><span className="text-gray-500 ml-1">— 에디션 복수 판매</span></span>
               </label>
             </div>
-
             {isNumbered && (
               <Field label="에디션 총 수량 *" name="edition_total" value={form.edition_total} onChange={handleChange} type="number" required />
             )}
-
             <TextArea label="라이선스 범위" name="license_scope" value={form.license_scope} onChange={handleChange} />
             <Field label="희망 시작가 (₩, 참고용)" name="asking_price" value={form.asking_price} onChange={handleChange} type="number" />
           </div>
@@ -122,7 +181,7 @@ export default function SubmitPage() {
             type="submit" disabled={loading}
             className="w-full bg-black text-white rounded-lg py-3 font-medium hover:bg-gray-800 disabled:opacity-50"
           >
-            {loading ? '업로드 중...' : '출품하기'}
+            {loading ? progress || '처리 중...' : '출품하기'}
           </button>
         </form>
       </div>
