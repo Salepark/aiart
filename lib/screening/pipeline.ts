@@ -37,6 +37,7 @@ export async function runScreeningPipeline(artworkId: string): Promise<void> {
   if (fetchErr || !artwork) throw new Error('artwork not found')
 
   // ── 전처리: 원본 다운로드 → 워터마크 미리보기 생성 + 이미지 분석 ──
+  let preprocessed = false
   try {
     const { data: originalFile } = await service.storage
       .from('originals')
@@ -77,10 +78,18 @@ export async function runScreeningPipeline(artworkId: string): Promise<void> {
         phash,
         exif,
       }).eq('id', artworkId)
+
+      preprocessed = true
     }
   } catch (e) {
     console.error('[pipeline] preprocessing error:', e)
-    // 전처리 실패해도 심사는 계속 진행
+  }
+
+  // 전처리(워터마크 생성)가 실패하면 워터마크 없는 원본이 그대로 노출될 수 있으므로
+  // 자동 심사를 진행하지 않고 관리자 확인 대기 상태로 보류한다.
+  if (!preprocessed) {
+    await service.from('artworks').update({ status: 'held' }).eq('id', artworkId)
+    return
   }
 
   await service.from('artworks').update({ status: 'screening' }).eq('id', artworkId)
