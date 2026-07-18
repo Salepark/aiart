@@ -53,14 +53,24 @@ export async function runScreeningPipeline(artworkId: string): Promise<void> {
         extractExif(buffer),
       ])
 
-      // 워터마크 미리보기 업로드 (기존 preview_path 덮어쓰기)
+      // 워터마크 미리보기는 항상 JPEG로 인코딩되므로 경로 확장자도 .jpg로 통일
+      const jpgPreviewPath = artwork.preview_path.replace(/\.\w+$/, '.jpg')
+
       await service.storage
         .from('artworks')
-        .upload(artwork.preview_path, previewBuffer, {
+        .upload(jpgPreviewPath, previewBuffer, {
           contentType: 'image/jpeg', upsert: true,
         })
 
+      if (jpgPreviewPath !== artwork.preview_path) {
+        await service.storage.from('artworks').remove([artwork.preview_path])
+        artwork.preview_path = jpgPreviewPath
+        artwork.image_path = jpgPreviewPath
+      }
+
       await service.from('artworks').update({
+        preview_path:  jpgPreviewPath,
+        image_path:    jpgPreviewPath,
         actual_width:  meta.actual_width,
         actual_height: meta.actual_height,
         file_hash,
